@@ -8,6 +8,7 @@ client = OpenAI(
     api_key="**",  
 )
 
+disease_synonyms_cache = {}
 
 with open('data.json', 'r') as file:
     disease_drug_data = json.load(file)
@@ -24,12 +25,61 @@ def chat_with_gpt(messages):
     response_message = response.choices[0].message.content
     return response_message
 
+def get_disease_synonyms(disease_name):
+ 
+    if disease_name in disease_synonyms_cache:
+        return disease_synonyms_cache[disease_name]
+    
+ 
+    prompt = f"Provide a list of common synonyms or alternative names for the disease '{disease_name}' in medical context."
+    
+    messages = [
+        {"role": "system", "content": "You are a medical expert."},
+        {"role": "user", "content": prompt}
+    ]
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=messages,
+            max_tokens=100,
+            n=1,
+            stop=None,
+            temperature=0.7,
+        )
+        
+  
+        synonym_list = response.choices[0].message.content.split(", ")
+        synonym_list = [syn.strip().lower() for syn in synonym_list]
+        
+        disease_synonyms_cache[disease_name.lower()] = synonym_list
+        
+        return synonym_list
+    except Exception as e:
+        print(f"Error fetching synonyms for {disease_name}: {str(e)}")
+        return []
+
 def find_closest_disease(disease):
     diseases = list(disease_drug_data.keys())
-    closest_matches = get_close_matches(disease.lower(), [d.lower() for d in diseases], n=1, cutoff=0.6)
+    disease_lower = disease.lower()
+    
+   
+    synonyms = get_disease_synonyms(disease)
+    
+   
+    synonyms.append(disease_lower)
+    
+   
+    for main_disease in diseases:
+        if main_disease.lower() in synonyms:
+            return main_disease
+    
+   
+    closest_matches = get_close_matches(disease_lower, [d.lower() for d in diseases], n=1, cutoff=0.6)
     
     if closest_matches:
         return next(d for d in diseases if d.lower() == closest_matches[0])
+    
     return None
 
 def get_top_drug_recommendations(disease, top_n=10):
